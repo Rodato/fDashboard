@@ -1,0 +1,10 @@
+name: fdashboard
+title:
+username:
+account: rodato
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 3174702
+bundleId: 3829457
+url: https://rodato.shinyapps.io/fdashboard/
+when: 1604699884.23662

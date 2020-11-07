@@ -1,0 +1,410 @@
+---
+title: "Homicidios (1993-2019)"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+    theme: bootstrap
+    #social: menu
+    
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(plotly)
+library(scales)
+library(shiny)
+
+#funciones####
+read_excel_allsheets <- function(filename, tibble = FALSE) {
+  # I prefer straight data.frames
+  # but if you like tidyverse tibbles (the default with read_excel)
+  # then just pass tibble = TRUE
+  sheets <- readxl::excel_sheets(filename)
+  x <- lapply(sheets, function(X) readxl::read_excel(filename, sheet = X))
+  if(!tibble) x <- lapply(x, as.data.frame)
+  names(x) <- sheets
+  x
+} #leer todos los sheets de un excell y guarfarlos en una lista
+
+gr_edad<-function(data){
+  data$g_edad<-ifelse(data$EDAD < 10, "0  a 9 años",
+                      ifelse(data$EDAD > 9 & data$EDAD < 20, "10 a 19 años",
+                             ifelse(data$EDAD > 19 & data$EDAD < 30, "20 a 29 años",
+                                    ifelse(data$EDAD > 29 & data$EDAD < 40, "30 a 39 años",
+                                           ifelse(data$EDAD > 39 & data$EDAD < 50, "40 a 49 años",
+                                                  ifelse(data$EDAD > 49 & data$EDAD < 60, "50 a 59 años",
+                                                         ifelse(data$EDAD > 59 & data$EDAD < 70, "60 a 69 años",
+                                                                ifelse(data$EDAD > 69 & data$EDAD < 80, "70 a 79 años",
+                                                                       ifelse(data$EDAD > 79 & data$EDAD < 90, "80 a 89 años",
+                                                                              ifelse(data$EDAD > 89 & data$EDAD < 100, "90 a 99 años",
+                                                                                     ifelse(data$EDAD > 99, "100 años en adelante","sin grupo")))))))))))
+  return(data)
+}
+
+sum_byage_c<-function(data){
+  
+  df<-data.frame()
+  edades<-unique(data$g_edad)
+  
+  for (edad in edades){
+    data_<-subset(data,data$g_edad == edad)
+    data_<-data_%>%group_by(fechao,categoria_movil) %>% summarise(Freq=n())
+    data_$g_edad<-edad
+    df<-rbind(df,data_)
+  }
+  
+  return(df)
+  
+}
+
+sum_byage_sc<-function(data){
+  
+  df<-data.frame()
+  
+  for (edad in unique(data$g_edad)){
+    data_<-subset(data,data$g_edad == edad)
+    data_<-data_%>%group_by(fechao,subcategoria_movil) %>% summarise(Freq=n())
+    data_$g_edad<-edad
+    df<-rbind(df,data_)
+  }
+  
+  return(df)
+  
+}
+
+comunas_tipoV<-function(data){
+  
+  df<-data.frame()
+  comunas<-unique(data$com)
+  
+  for (comuna in comunas){
+    data_<-subset(data,data$com == comuna)
+    data_<-data_%>%group_by(fechao,tipo_violencia) %>% summarise(Freq=n())
+    data_$com<-comuna
+    df<-rbind(df,data_)
+  }
+  
+  return(df)
+  
+}
+
+
+
+#procesamiento####
+homicidios<-read_excel_allsheets("DATOS_1993-2019.xlsx")
+homicidios<-homicidios[[2]]
+
+homicidios$EDAD[is.na(homicidios$EDAD)]<-200
+
+homicidios<-gr_edad(homicidios)
+
+
+
+
+```
+
+
+
+
+
+
+Categoría móvil
+=======================================================================
+
+Sidebar {.sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+selectInput(inputId = "Edad_",
+            label = "Edad",
+            choices = unique(homicidios$g_edad))
+            #choices = genero,
+            #selected = "Total")
+
+selectInput(inputId = "Mov_",
+            label = "Movil",
+            choices = unique(homicidios$categoria_movil))
+            #selected = "1993")
+
+selectInput(inputId = "sMov_",
+            label = "Sub Movil",
+            choices = unique(homicidios$subcategoria_movil))
+            #selected = "1993")
+
+```
+
+row {data-width=350}
+-----------------------------------------------------------------------
+
+### Móvil
+```{r}
+
+movil_<-homicidios[,c(8,11,16,18)]
+movil_m<-subset(movil_,movil_$SEXO == "M")
+movil_f<-subset(movil_,movil_$SEXO == "F")
+#
+movil_m<-sum_byage_c(movil_m)
+movil_m$SEXO<-"M"
+#
+movil_f<-sum_byage_c(movil_f)
+movil_f$SEXO<-"F"
+#
+
+#
+#
+movil<-rbind(movil_f,movil_m)
+#
+movil_r <- reactive({
+  movil[movil$g_edad == input$Edad_ & movil$categoria_movil == input$Mov_, c(1,3,5)]
+    })
+#
+#
+renderPlotly({
+
+  movil <- movil_r()
+
+  cmov<-ggplot(data=movil, aes(fill=SEXO,x=fechao, y=Freq)) +
+  geom_bar(position="dodge",stat="identity")+
+    xlab("")+
+    ylab("")+
+  theme_classic()+
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  scale_x_continuous("Año",labels=as.character(movil$fechao),breaks = movil$fechao)
+
+  ggplotly(cmov)
+
+})
+
+
+```
+
+row {data-width=350}
+-----------------------------------------------------------------------
+
+### Sub-móvil
+```{r}
+
+smovil_<-homicidios[,c(8,11,17,18)]
+smovil_m<-subset(smovil_,smovil_$SEXO == "M")
+smovil_f<-subset(smovil_,smovil_$SEXO == "F")
+#
+smovil_m<-sum_byage_sc(smovil_m)
+smovil_m$SEXO<-"M"
+#
+smovil_f<-sum_byage_sc(smovil_f)
+smovil_f$SEXO<-"F"
+#
+
+#
+#
+smovil<-rbind(smovil_f,smovil_m)
+#
+smovil_r <- reactive({
+  smovil[smovil$g_edad == input$Edad_ & smovil$subcategoria_movil == input$sMov_, c(1,3,5)]
+    })
+#
+#
+renderPlotly({
+
+  smovil <- smovil_r()
+
+  smov<-ggplot(data=smovil, aes(fill=SEXO,x=fechao, y=Freq)) +
+  geom_bar(position="dodge",stat="identity")+
+    xlab("")+
+    ylab("")+
+  theme_classic()+
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  scale_x_continuous("Año",labels=as.character(smovil$fechao),breaks = smovil$fechao)
+
+  ggplotly(smov)
+
+})
+
+```
+
+Tipo violencia
+=======================================================================
+
+
+Sidebar {.sidebar}
+-----------------------------------------------------------------------
+```{r}
+selectInput(inputId = "Com_",
+            label = "Comuna",
+            choices = unique(homicidios$com))
+#selected = "1993")
+
+selectInput(inputId = "tipo_",
+            label = "Tipo Violencia",
+            choices = unique(homicidios$tipo_violencia))
+#selected = "1993")
+```
+
+row {data-width=350}
+-----------------------------------------------------------------------
+
+### Distribución Comunas - Tipo violencia
+```{r}
+#
+
+homicidios$com[homicidios$com > 22]<-23
+
+tipo_<-homicidios%>%group_by(com,tipo_violencia) %>% summarise(Freq=n())
+
+#
+#tipo_r <- reactive({
+#  tipo_[tipo_$com == input$Com_, c(1:3)]
+#    })
+#
+#
+renderPlotly({
+
+  #tipo <- tipo_r()
+
+  tipov<-ggplot(data=tipo_, aes(fill=tipo_violencia,x=com, y=Freq)) +
+  geom_bar(position="stack",stat="identity")+
+    xlab("")+
+    ylab("")+
+  theme_classic()+
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5))+
+  scale_x_continuous("Comuna",labels=as.character(tipo_$com),breaks = tipo_$com)
+
+  ggplotly(tipov)
+
+})
+
+
+```
+
+
+row {data-width=350}
+-----------------------------------------------------------------------
+
+### Tipo violencia por comuna
+```{r}
+#
+tipo_<-comunas_tipoV(homicidios)
+
+
+#
+tipo_r <- reactive({
+  tipo_[tipo_$com == input$Com_, c(1:3)]
+    })
+#
+#
+renderPlotly({
+
+  tipo <- tipo_r()
+
+  tipov<-ggplot(data=tipo, aes(fill=tipo_violencia,x=fechao, y=Freq)) +
+  geom_bar(position="stack",stat="identity")+
+    xlab("")+
+    ylab("")+
+  theme_classic()+
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  scale_x_continuous("Año",labels=as.character(tipo$fechao),breaks = tipo$fechao)
+
+  ggplotly(tipov)
+
+})
+
+
+```
+
+Modalidad
+=======================================================================
+
+Sidebar {.sidebar}
+-----------------------------------------------------------------------
+```{r}
+selectInput(inputId = "mod_",
+            label = "Modalidad",
+            choices = unique(homicidios$modalidad))
+#selected = "1993")
+```
+
+row {data-width=350}
+-----------------------------------------------------------------------
+
+### Distribución temporal modalidad
+```{r}
+#
+
+modalidad_total<- homicidios%>%group_by(fechao,modalidad) %>% summarise(Freq=n())
+
+#
+#tipo_r <- reactive({
+#  tipo_[tipo_$com == input$Com_, c(1:3)]
+#    })
+#
+#
+renderPlotly({
+
+  #tipo <- tipo_r()
+
+  mod<-ggplot(data=modalidad_total, aes(fill=modalidad,x=fechao, y=Freq)) +
+  geom_bar(position="stack",stat="identity")+
+    xlab("")+
+    ylab("")+
+  theme_classic()+
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5))+
+  scale_x_continuous("Año",labels=as.character(tipo_$fechao),breaks = tipo_$fechao)
+
+  ggplotly(mod)
+
+})
+
+
+```
+
+
+row {data-width=350}
+-----------------------------------------------------------------------
+
+### Modalidad, género
+```{r}
+#
+mod_m<-subset(homicidios,homicidios$SEXO == "M")
+mod_f<-subset(homicidios,homicidios$SEXO == "F")
+#
+mod_m<-mod_m%>%group_by(fechao,modalidad) %>% summarise(Freq=n())
+mod_m$SEXO<-"M"
+#
+mod_f<-mod_f%>%group_by(fechao,modalidad) %>% summarise(Freq=n())
+mod_f$SEXO<-"F"
+#
+
+#
+#
+mod<-rbind(mod_f,mod_m)
+#
+mod_r <- reactive({
+  mod[mod$modalidad == input$mod_,c(1,3,4)]
+    })
+#
+#
+renderPlotly({
+
+  mod_p <- mod_r()
+
+  pmod<-ggplot(data=mod_p, aes(fill=SEXO,x=fechao, y=Freq)) +
+  geom_bar(position="dodge",stat="identity")+
+    xlab("")+
+    ylab("")+
+  theme_classic()+
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  scale_x_continuous("Año",labels=as.character(mod_p$fechao),breaks = mod_p$fechao)
+
+  ggplotly(pmod)
+
+})
+
+
+```
